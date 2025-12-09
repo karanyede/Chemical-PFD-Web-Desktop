@@ -239,7 +239,7 @@ QWidget#bgwidget QPushButton#backToWelcome:hover {
      <rect>
       <x>440</x>
       <y>270</y>
-      <width>81</width>
+      <width>341</width>
       <height>20</height>
      </rect>
     </property>
@@ -256,7 +256,7 @@ QWidget#bgwidget QPushButton#backToWelcome:hover {
      <rect>
       <x>440</x>
       <y>370</y>
-      <width>81</width>
+      <width>341</width>
       <height>20</height>
      </rect>
     </property>

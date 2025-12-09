@@ -12,8 +12,11 @@ def main():
     app = QApplication(sys.argv)
 
     stacked = QStackedWidget()
-    stacked.setFixedHeight(800)
-    stacked.setFixedWidth(1200)
+    stacked.setMinimumSize(1200, 800)
+
+    # open maximized or fullscreen
+    stacked.showMaximized()   # or 
+    # stacked.showFullScreen()
 
     # Expose stacked widget globally for navigation/toast
     app_state.widget = stacked

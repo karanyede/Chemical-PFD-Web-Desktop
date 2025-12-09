@@ -23,6 +23,7 @@ class WelcomeScreen(QDialog):
             self.update_theme_button()
 
         apply_theme_to_screen(self)
+        self.center_content()
 
     def gotologin(self):
         slide_to_index(1, direction=1)
@@ -40,6 +41,34 @@ class WelcomeScreen(QDialog):
             return
         self.themeToggle.setText("Dark mode" if app_state.current_theme == "light" else "Light mode")
 
+    def resizeEvent(self, event):
+        self.center_content()
+        self.position_theme_toggle()
+
+        bg = self.findChild(QtWidgets.QWidget, "bgwidget")
+        if bg:
+            bg.setGeometry(self.rect())
+        super().resizeEvent(event)
+
+    def center_content(self):
+        names = ["label", "label_2", "login", "create"]
+        for name in names:
+            w = getattr(self, name, None)
+            if not w:
+                continue
+            geo = w.geometry()
+            new_x = (self.width() - geo.width()) // 2
+            geo.moveLeft(new_x)
+            w.setGeometry(geo)
+    # keep toggle at top-right with a margin
+    def position_theme_toggle(self):
+        btn = getattr(self, "themeToggle", None)
+        if not btn:
+            return
+        geo = btn.geometry()
+        margin_right = 40
+        geo.moveLeft(self.width() - geo.width() - margin_right)
+        btn.setGeometry(geo)
 
 class LoginScreen(QDialog):
     def __init__(self):
@@ -59,6 +88,9 @@ class LoginScreen(QDialog):
 
         apply_theme_to_screen(self)
 
+        # center once at startup
+        self.center_content()
+
     def gotowelcome(self):
         slide_to_index(0, direction=-1)
 
@@ -71,6 +103,31 @@ class LoginScreen(QDialog):
         if not hasattr(self, "themeToggle"):
             return
         self.themeToggle.setText("Dark mode" if app_state.current_theme == "light" else "Light mode")
+    
+    def resizeEvent(self, event):
+        self.center_content()
+
+        bg = self.findChild(QtWidgets.QWidget, "bgwidget")
+        if bg:
+            bg.setGeometry(self.rect())
+        super().resizeEvent(event)
+
+    def center_content(self):
+        # widgets we want in the vertical column
+        names = [
+            "label", "label_2",
+            "label_3", "emailfield",
+            "label_4", "passwordfield",
+            "error", "login", "backToWelcome"
+        ]
+        for name in names:
+            w = getattr(self, name, None)
+            if not w:
+                continue
+            geo = w.geometry()
+            new_x = (self.width() - geo.width()) // 2
+            geo.moveLeft(new_x)
+            w.setGeometry(geo)
 
     def loginfunction(self):
         user = self.emailfield.text()
@@ -118,6 +175,7 @@ class CreateAccScreen(QDialog):
             self.update_theme_button()
 
         apply_theme_to_screen(self)
+        self.center_content()
 
     def gotologin(self):
         slide_to_index(1, direction=-1)
@@ -131,6 +189,32 @@ class CreateAccScreen(QDialog):
         if not hasattr(self, "themeToggle"):
             return
         self.themeToggle.setText("Dark mode" if app_state.current_theme == "light" else "Light mode")
+    
+    def resizeEvent(self, event):
+        self.center_content()
+
+        bg = self.findChild(QtWidgets.QWidget, "bgwidget")
+        if bg:
+            bg.setGeometry(self.rect())
+        super().resizeEvent(event)
+
+    def center_content(self):
+        names = [
+            "label", "label_2",
+            "label_3", "emailfield",
+            "label_4", "passwordfield",
+            "label_5", "confirmpasswordfield",
+            "error", "signup", "backToLogin"
+        ]
+        for name in names:
+            w = getattr(self, name, None)
+            if not w:
+                continue
+            geo = w.geometry()
+            new_x = (self.width() - geo.width()) // 2
+            geo.moveLeft(new_x)
+            w.setGeometry(geo)
+
 
     def signupfunction(self):
         user = self.emailfield.text()
