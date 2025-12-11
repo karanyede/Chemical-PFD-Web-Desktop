@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Tooltip } from "@heroui/react";
-
+import { Input, Badge } from "@heroui/react";
+import { SearchIcon, FilterIcon } from "@/components/icons"; // Make sure you have this icon component
 // Import component configuration with all assets
 import { componentsConfig } from "@/assets/config/items";
 import { ThemeSwitch } from "@/components/theme-switch";
@@ -31,11 +32,28 @@ export default function Editor() {
   const [components, setComponents] = useState<Record<string, Record<string, ComponentItem>>>({});
   const [droppedItems, setDroppedItems] = useState<CanvasItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Load component configuration
   useEffect(() => {
     setComponents(componentsConfig);
   }, []);
+  // Filter components by search query
+  const filteredComponents = Object.keys(components).reduce((result, category) => {
+    // items in this category
+    const items = components[category];
+
+    // filter by search text
+    const matched = Object.keys(items).filter((key) =>
+      items[key].name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    if (matched.length > 0) {
+      result[category] = matched.map((key) => items[key]);
+    }
+
+    return result;
+  }, {} as Record<string, ComponentItem[]>);
 
   // Handle dragging from sidebar
   const handleDragStart = (e: React.DragEvent, item: ComponentItem) => {
@@ -165,37 +183,98 @@ export default function Editor() {
       <div className="flex-1 flex overflow-hidden">
         {/* Component library sidebar */}
         <div className="w-64 border-r flex flex-col">
-          <div className="p-3 border-b font-bold text-sm">Components Library</div>
-          <div className="p-4 overflow-y-auto flex-1">
-            {Object.keys(components).map((category) => (
-              <div key={category} className="mb-6">
-                <h4 className="font-semibold mb-2 ">{category}</h4>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.keys(components[category]).map((itemKey) => {
-                    const item = components[category][itemKey];
-                    return (
-                      <div
-                        key={itemKey}
-                        className="p-2 border rounded hover:bg-gray-50 cursor-move flex flex-col items-center"
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, item)}
-                        title={`Drag to canvas: ${item.name}`}
-                      >
-                        <img 
-                          src={item.icon} 
-                          alt={item.name}
-                          className="w-8 h-8 object-contain mb-1"
-                        />
-                        <span className="text-xs text-center line-clamp-2">{item.name}</span>
-                      </div>
-                    );
-                  })}
+          {/* Header with search */}
+          <div className="p-3 border-b">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                Components Library
+                <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
+                  {Object.keys(components).reduce((acc, cat) => acc + Object.keys(components[cat]).length, 0)} items
+                </span>
+              </h3>
+            </div>
+            
+            {/* Search Bar */}
+            <div className="relative mb-3">
+              <div className="absolute left-3 top-1/2 transform -translate-y-1/2">
+                <SearchIcon className="w-4 h-4 text-gray-400" />
+              </div>
+             <input
+                type="text"
+                placeholder="Search components..."
+                className="w-full pl-9 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                onChange={(e) => setSearchQuery(e.target.value)}
+                value={searchQuery}
+              />
+
+            </div>
+            
+            {/* Quick filters */}
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              <button className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded whitespace-nowrap">
+                All
+              </button>
+              <button className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded whitespace-nowrap">
+                Frequently Used
+              </button>
+              <button className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded whitespace-nowrap">
+                Recent
+              </button>
+            </div>
+          </div>
+          
+          {/* Component List */}
+          <div className="flex-1 overflow-y-auto">
+          {Object.keys(filteredComponents).map((category) => (
+              <div key={category} className="mb-6 first:mt-4">
+                <div className="px-4 mb-2 flex items-center justify-between group">
+                  <h4 className="font-semibold text-sm text-gray-700">{category}</h4>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                    {Object.keys(components[category]).length}
+                  </span>
+                </div>
+                <div className="px-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    {filteredComponents[category].map((item) => {
+                      return (
+                        <div
+                          key={item.name}
+                          className="p-2 border rounded hover:bg-blue-50 hover:border-blue-200 cursor-move flex flex-col items-center transition-colors duration-150 group/item"
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, item)}
+                          title={`Drag to canvas: ${item.name}`}
+                        >
+                          <div className="relative">
+                            <img 
+                              src={item.icon} 
+                              alt={item.name}
+                              className="w-10 h-10 object-contain mb-1 group-hover/item:scale-105 transition-transform duration-150"
+                            />
+                            <div className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full text-white text-[10px] flex items-center justify-center hidden group-hover/item:flex">
+                              +
+                            </div>
+                          </div>
+                          <span className="text-xs text-center line-clamp-2 text-gray-700 group-hover/item:text-blue-600">
+                            {item.name}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             ))}
+            
+            {/* Empty search state - uncomment when implementing search */}
+            {/* {filteredComponents.length === 0 && (
+              <div className="px-4 py-8 text-center">
+                <div className="text-gray-400 mb-2">🔍</div>
+                <p className="text-sm text-gray-500">No components found</p>
+                <p className="text-xs text-gray-400 mt-1">Try a different search term</p>
+              </div>
+            )} */}
           </div>
         </div>
-
         {/* Canvas area */}
         <div
           className="flex-1 relative overflow-auto"
