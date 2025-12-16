@@ -4,6 +4,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
+from src.theme import apply_theme_to_screen
 
 class ActionCard(QFrame):
     """
@@ -55,6 +56,7 @@ class RecentProjectItem(QWidget):
 
     def __init__(self, project_name, last_opened, parent=None):
         super().__init__(parent)
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.project_name = project_name
         self.setCursor(Qt.PointingHandCursor)
         
@@ -194,3 +196,6 @@ class LandingPage(QWidget):
         self.content_layout.addStretch()
         self.content_layout.addLayout(h_layout)
         self.content_layout.addStretch()
+
+        # Apply current theme
+        apply_theme_to_screen(self)
