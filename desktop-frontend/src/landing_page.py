@@ -1,17 +1,22 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QFrame
+    QPushButton, QFrame, QSpacerItem, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QFont
+
 from src.theme import apply_theme_to_screen
 from src.navigation import slide_to_index
 
 
+# Action Card
 class ActionCard(QFrame):
+    """A clickable card widget that acts as a large button."""
     clicked = pyqtSignal()
 
     def __init__(self, icon_text, title, description, parent=None):
         super().__init__(parent)
+
         self.setObjectName("actionCard")
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(240, 140)
@@ -20,16 +25,19 @@ class ActionCard(QFrame):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(10)
 
+        # Icon
         icon_label = QLabel(icon_text)
         icon_label.setObjectName("cardIcon")
         icon_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(icon_label)
 
+        # Title
         title_label = QLabel(title)
         title_label.setObjectName("cardTitle")
         title_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(title_label)
 
+        # Description
         desc_label = QLabel(description)
         desc_label.setObjectName("cardDesc")
         desc_label.setAlignment(Qt.AlignCenter)
@@ -44,23 +52,28 @@ class ActionCard(QFrame):
         super().mousePressEvent(event)
 
 
+# Recent Project Item
 class RecentProjectItem(QWidget):
+    """A row item showing a recent project."""
     clicked = pyqtSignal(str)
 
     def __init__(self, project_name, last_opened, parent=None):
         super().__init__(parent)
+
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.project_name = project_name
         self.setCursor(Qt.PointingHandCursor)
+        self.project_name = project_name
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(15)
 
+        # Icon
         icon_label = QLabel("📄")
         icon_label.setObjectName("recentIcon")
         layout.addWidget(icon_label)
 
+        # Text info
         info_layout = QVBoxLayout()
         info_layout.setSpacing(2)
 
@@ -75,6 +88,7 @@ class RecentProjectItem(QWidget):
         layout.addLayout(info_layout)
         layout.addStretch()
 
+        # Arrow
         arrow_label = QLabel("→")
         arrow_label.setObjectName("recentArrow")
         layout.addWidget(arrow_label)
@@ -85,6 +99,7 @@ class RecentProjectItem(QWidget):
         super().mousePressEvent(event)
 
 
+# Landing Page Screen
 class LandingPage(QWidget):
     new_project_clicked = pyqtSignal()
 
@@ -92,27 +107,28 @@ class LandingPage(QWidget):
         super().__init__(parent)
         self.setObjectName("landingPage")
 
+        # ROOT layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # background
+        # Background area
         self.bgwidget = QWidget(self)
         self.bgwidget.setObjectName("bgwidget")
         layout.addWidget(self.bgwidget)
 
+        # Content layout inside bgwidget
         self.content_layout = QVBoxLayout(self.bgwidget)
         self.content_layout.setContentsMargins(40, 40, 40, 40)
 
-        # HEADER BAR (Logout only)
+        # HEADER BAR
         header_bar = QWidget(self.bgwidget)
         header_bar.setObjectName("headerBar")
 
         header_layout = QHBoxLayout(header_bar)
         header_layout.setContentsMargins(10, 0, 10, 0)
-        header_layout.setSpacing(10)
         header_layout.addStretch()
 
-        # LOGOUT button
+        # Logout button
         self.logout_btn = QPushButton("Logout")
         self.logout_btn.setObjectName("logoutButton")
         self.logout_btn.setCursor(Qt.PointingHandCursor)
@@ -120,30 +136,31 @@ class LandingPage(QWidget):
 
         self.content_layout.addWidget(header_bar)
 
-        # ------------------------
-        # Main center content
-        # ------------------------
+        # CENTER CONTENT
         center_widget = QWidget()
         center_widget.setMaximumWidth(800)
+
         center_layout = QVBoxLayout(center_widget)
         center_layout.setSpacing(30)
 
-        header_layout2 = QVBoxLayout()
-        header_layout2.setSpacing(5)
+        # Header
+        header2 = QVBoxLayout()
+        header2.setSpacing(5)
 
-        header_label = QLabel("Welcome to Chemical PFD")
-        header_label.setObjectName("headerLabel")
-        header_label.setAlignment(Qt.AlignCenter)
-        header_layout2.addWidget(header_label)
+        title = QLabel("Welcome to Chemical PFD")
+        title.setObjectName("headerLabel")
+        title.setAlignment(Qt.AlignCenter)
+        header2.addWidget(title)
 
-        subtitle_label = QLabel("Create or edit your process flow diagrams")
-        subtitle_label.setObjectName("subtitleLabel")
-        subtitle_label.setAlignment(Qt.AlignCenter)
-        header_layout2.addWidget(subtitle_label)
+        subtitle = QLabel("Create or edit your process flow diagrams")
+        subtitle.setObjectName("subtitleLabel")
+        subtitle.setAlignment(Qt.AlignCenter)
+        header2.addWidget(subtitle)
 
-        center_layout.addLayout(header_layout2)
+        center_layout.addLayout(header2)
         center_layout.addSpacing(20)
 
+        # Action Cards
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(20)
         cards_layout.setAlignment(Qt.AlignCenter)
@@ -158,6 +175,7 @@ class LandingPage(QWidget):
         center_layout.addLayout(cards_layout)
         center_layout.addSpacing(30)
 
+        # Recent Projects
         recent_header = QLabel("Recent Projects")
         recent_header.setObjectName("sectionHeader")
         center_layout.addWidget(recent_header)
@@ -178,6 +196,7 @@ class LandingPage(QWidget):
             item = RecentProjectItem(name, time)
             recent_layout.addWidget(item)
 
+            # Divider
             line = QFrame()
             line.setFrameShape(QFrame.HLine)
             line.setObjectName("divider")
@@ -185,33 +204,30 @@ class LandingPage(QWidget):
 
         center_layout.addWidget(recent_container)
 
-        hlayout = QHBoxLayout()
-        hlayout.addStretch()
-        hlayout.addWidget(center_widget)
-        hlayout.addStretch()
-        self.content_layout.addLayout(hlayout)
+        # Center alignment
+        h = QHBoxLayout()
+        h.addStretch()
+        h.addWidget(center_widget)
+        h.addStretch()
+
+        self.content_layout.addLayout(h)
         self.content_layout.addStretch()
 
-        # apply theme (static)
+        # Apply theme
         apply_theme_to_screen(self)
 
-        # Logout handling
+        # Logout
         self.logout_btn.clicked.connect(self.on_logout_clicked)
 
-    def go_to_welcome(self):
-        slide_to_index(0, direction=-1)
-
-    # LOGOUT
+    # LOGOUT LOGIC
     def on_logout_clicked(self):
         import src.app_state as app_state
-        from src.navigation import slide_to_index
 
-        # Clear authentication state
         app_state.access_token = None
         app_state.refresh_token = None
         app_state.current_user = None
 
         print("Logged out. Tokens cleared.")
-
-        # Navigate to welcome screen
         slide_to_index(0, direction=-1)
+
+

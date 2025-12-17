@@ -1,11 +1,29 @@
-# api/admin.py
-from django.contrib import admin, messages
+from importlib.resources import path
+from django.contrib import admin
+from .models import Project, Component, ProjectComponent
+from django.contrib import admin
 from django.urls import path
 from django.shortcuts import render, redirect
+import zipfile
+from django.contrib import admin, messages
+import tempfile
+import os
+import csv
 from django.core.files import File
-from .models import Component
-import csv, glob, zipfile, os, tempfile
 
+# -----------------------------
+# Project Admin
+# -----------------------------
+@admin.register(Project)
+class ProjectAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "user", "created_at")
+    search_fields = ("name", "user__username")
+    list_filter = ("created_at",)
+
+
+# -----------------------------
+# Component Admin
+# -----------------------------
 @admin.register(Component)
 class ComponentAdmin(admin.ModelAdmin):
     list_display = ("id", "name")
@@ -157,3 +175,22 @@ class ComponentAdmin(admin.ModelAdmin):
                 return redirect("admin:api_component_changelist")
 
         return render(request, "admin/api/component/upload_zip.html")
+
+# -----------------------------
+# ProjectComponent Admin
+# -----------------------------
+@admin.register(ProjectComponent)
+class ProjectComponentAdmin(admin.ModelAdmin):
+    list_display = ("id", "project_name", "component_name", "component_unique_id")
+    search_fields = ("component_unique_id", "project__name", "component__name")
+    list_filter = ("project", "component")
+
+    # Show project name
+    def project_name(self, obj):
+        return obj.project.name
+    project_name.short_description = "Project"
+
+    # Show component name
+    def component_name(self, obj):
+        return obj.component.name
+    component_name.short_description = "Component"
