@@ -15,8 +15,7 @@ import { MdZoomIn, MdZoomOut, MdCenterFocusWeak } from "react-icons/md";
 import ExportModal from '@/components/Canvas/ExportModal';
 import { useExport } from '@/hooks/useExport';
 import { ExportOptions } from '@/components/Canvas/types';
-import { FiDownload } from 'react-icons/fi';
-import { useComponents } from "@/context/ComponentContext";
+import { FiDownload } from 'react-icons/fi'; 
 import { useEditorStore, type ComponentItem, type CanvasItem, type Connection, type CanvasState } from "@/store/useEditorStore";
 
  
