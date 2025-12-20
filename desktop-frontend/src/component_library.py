@@ -1,5 +1,8 @@
 import os
 import csv
+import requests
+import src.app_state as app_state
+from src import api_client
 from PyQt5.QtCore import Qt, QMimeData, QSize
 from PyQt5.QtGui import QIcon, QDrag
 from PyQt5.QtWidgets import (
@@ -15,10 +18,10 @@ class ComponentButton(QToolButton):
         
         if os.path.exists(icon_path):
             self.setIcon(QIcon(icon_path))
-            self.setIconSize(QSize(48, 48))
+            self.setIconSize(QSize(42, 42))
         
         self.setToolTip(component_data['name'])
-        self.setFixedSize(60, 60)
+        self.setFixedSize(56, 56)
         self.setStyleSheet("""
             QToolButton {
                 border: 1px solid #ccc;
@@ -60,21 +63,29 @@ class ComponentButton(QToolButton):
 
 class ComponentLibrary(QDockWidget):
     def __init__(self, parent=None):
-        super(ComponentLibrary, self).__init__("Component Library", parent)
+        super(ComponentLibrary, self).__init__("Components", parent)
         
-        self.setFeatures(QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetMovable)
+        self.setFeatures(
+            QDockWidget.DockWidgetFloatable |
+            QDockWidget.DockWidgetMovable |
+            QDockWidget.DockWidgetClosable
+        )
         self.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+
+        # 🔥 reduce width so canvas gets more space
+        self.setMinimumWidth(260)
+        self.setMaximumWidth(260)
         
         self.component_data = []
         self.icon_buttons = []
         self.category_widgets = []
         
         self._setup_ui()
+        self._sync_components_with_backend()
         self._load_components()
         self._populate_icons()
-        
-        self.setMinimumWidth(400)
     
+
     def _setup_ui(self):
         main_widget = QWidget()
         main_layout = QVBoxLayout(main_widget)
@@ -99,7 +110,8 @@ class ComponentLibrary(QDockWidget):
         main_layout.addWidget(self.scroll_area)
         
         self.setWidget(main_widget)
-    
+
+
     def _load_components(self):
         csv_path = os.path.join("ui", "assets", "Component_Details.csv")
         
@@ -118,12 +130,103 @@ class ComponentLibrary(QDockWidget):
                         })
         except Exception as e:
             print(f"Error loading components: {e}")
-    
+
+    def _sync_components_with_backend(self):
+        """
+        Fetch components from backend and append new ones to local CSV.
+        Also downloads the PNG icon if available.
+        """
+        try:
+            # 1. Fetch from API
+            api_components = api_client.get_components()
+            if not api_components:
+                return
+
+            # 2. Read local CSV to find existing s_nos
+            csv_path = os.path.join("ui", "assets", "Component_Details.csv")
+            existing_s_nos = set()
+            if os.path.exists(csv_path):
+                with open(csv_path, 'r', encoding='utf-8-sig') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if row.get('s_no'):
+                            existing_s_nos.add(row.get('s_no').strip())
+
+            # 3. Append new components
+            new_rows = []
+            for comp in api_components:
+                s_no = str(comp.get('s_no', '')).strip()
+                if not s_no or s_no in existing_s_nos:
+                    continue
+
+                # Prepare row
+                row = {
+                    's_no': s_no,
+                    'parent': comp.get('parent', ''),
+                    'name': comp.get('name', ''),
+                    'legend': comp.get('legend', ''),
+                    'suffix': comp.get('suffix', ''),
+                    'object': comp.get('object', ''),
+                    'svg': '', 
+                    'png': '',
+                    'grips': '' 
+                }
+                
+                # Handle Image Download
+                target_folder = self.FOLDER_MAP.get(row['parent'], row['parent'])
+                target_name = row['name']
+                
+                png_dir = os.path.join("ui", "assets", "png", target_folder)
+                os.makedirs(png_dir, exist_ok=True)
+                
+                clean_name = target_name
+                for old, new in self.NAME_CORRECTIONS.items():
+                    clean_name = clean_name.replace(old, new)
+                
+                png_path = os.path.join(png_dir, f"{clean_name}.png")
+                
+                # Download PNG
+                png_url = comp.get('png')
+                if png_url:
+                    if not png_url.startswith('http'):
+                        png_url = f"{app_state.BACKEND_BASE_URL}{png_url}"
+                    try:
+                        r = requests.get(png_url, timeout=5)
+                        if r.status_code == 200:
+                            with open(png_path, 'wb') as f:
+                                f.write(r.content)
+                            print(f"Downloaded icon for {target_name}")
+                    except Exception as e:
+                        print(f"Failed to download PNG for {target_name}: {e}")
+
+                new_rows.append(row)
+
+            # 4. Write to CSV
+            if new_rows:
+                # Check if file exists to determine if we need header
+                file_exists = os.path.exists(csv_path)
+                
+                with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+                    fieldnames = ['s_no','parent','name','legend','suffix','object','svg','png','grips']
+                    writer = csv.DictWriter(f, fieldnames=fieldnames)
+                    
+                    if not file_exists:
+                        writer.writeheader()
+                        
+                    for row in new_rows:
+                        writer.writerow(row)
+                
+                print(f"Synced {len(new_rows)} new components from backend.")
+
+        except Exception as e:
+            print(f"Component sync failed: {e}")
+
+
     def _populate_icons(self):
         for i in reversed(range(self.scroll_layout.count())):
-            widget = self.scroll_layout.itemAt(i).widget()
-            if widget:
-                widget.deleteLater()
+            w = self.scroll_layout.itemAt(i).widget()
+            if w:
+                w.deleteLater()
         
         self.icon_buttons.clear()
         self.category_widgets.clear()
