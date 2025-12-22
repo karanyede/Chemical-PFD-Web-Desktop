@@ -215,11 +215,6 @@ export default function Editor() {
 
   // --- Event Listeners ---
 
-  // Handle keyboard events (Delete key)
-  useEffect(() => {
- const handleKeyDown = (e: KeyboardEvent) => {
-  const key = e.key.toLowerCase();
-
   const shortcuts: Shortcut[] = [
     {
       key: "z",
@@ -237,7 +232,7 @@ export default function Editor() {
       handler: handleCenterToContent,
     },
     {
-      key: "d",
+      key: "backspace",
       requireCtrl: true,
       handler: () => {
         if (selectedConnectionId !== null && projectId) {
@@ -250,6 +245,11 @@ export default function Editor() {
       },
     },
   ];
+  // Handle keyboard events (Delete key)
+  useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+  const key = e.key.toLowerCase();
+
 
   for (const shortcut of shortcuts) {
     const matchesKey =
