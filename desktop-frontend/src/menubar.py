@@ -60,13 +60,11 @@ class MenuBarManager(QObject):
 
         undo_action = QAction("Undo", self.main_window)
         undo_action.setShortcut("Ctrl+Z")
-        undo_action.setEnabled(False) # Disabled as requested until logic exists
         undo_action.triggered.connect(self.undo_clicked.emit)
         edit_menu.addAction(undo_action)
 
         redo_action = QAction("Redo", self.main_window)
         redo_action.setShortcut("Ctrl+Y")
-        redo_action.setEnabled(False) # Disabled as requested until logic exists
         redo_action.triggered.connect(self.redo_clicked.emit)
         edit_menu.addAction(redo_action)
         

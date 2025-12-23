@@ -1,12 +1,89 @@
 import os
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import Qt, QPoint, QPointF
-from PyQt5.QtWidgets import QWidget, QLabel
+from PyQt5.QtWidgets import QWidget, QLabel, QUndoCommand, QUndoStack
 from PyQt5.QtGui import QPainter
 
 from src.component_widget import ComponentWidget
 import src.app_state as app_state
 from src.canvas import resources, painter
+
+# =============================================================================
+#                               UNDO COMMANDS
+# =============================================================================
+
+class AddCommand(QUndoCommand):
+    def __init__(self, canvas, component, pos):
+        super().__init__()
+        self.canvas = canvas
+        self.component = component
+        self.component.move(pos)
+        self.setText(f"Add {component.config.get('component', 'Component')}")
+
+    def redo(self):
+        if self.component not in self.canvas.components:
+            self.canvas.components.append(self.component)
+            self.component.show()
+            self.canvas.update()
+
+    def undo(self):
+        if self.component in self.canvas.components:
+            self.canvas.components.remove(self.component)
+            self.component.hide()
+            self.canvas.update()
+
+class DeleteCommand(QUndoCommand):
+    def __init__(self, canvas, components, connections):
+        super().__init__()
+        self.canvas = canvas
+        self.components = components  # List of components to delete
+        self.connections = connections # List of connections to delete
+        self.setText(f"Delete {len(components)} items")
+
+    def redo(self):
+        # Remove connections first
+        for conn in self.connections:
+            if conn in self.canvas.connections:
+                self.canvas.connections.remove(conn)
+        
+        # Remove components
+        for comp in self.components:
+            if comp in self.canvas.components:
+                self.canvas.components.remove(comp)
+                comp.hide()
+        
+        self.canvas.update()
+
+    def undo(self):
+        # Restore components
+        for comp in self.components:
+            if comp not in self.canvas.components:
+                self.canvas.components.append(comp)
+                comp.show()
+        
+        # Restore connections
+        for conn in self.connections:
+            if conn not in self.canvas.connections:
+                self.canvas.connections.append(conn)
+        
+        self.canvas.update()
+
+class MoveCommand(QUndoCommand):
+    def __init__(self, component, old_pos, new_pos):
+        super().__init__()
+        self.component = component
+        self.old_pos = old_pos
+        self.new_pos = new_pos
+        self.setText(f"Move {component.config.get('component', 'Component')}")
+
+    def redo(self):
+        self.component.move(self.new_pos)
+        self.component.parentWidget().update()
+
+    def undo(self):
+        self.component.move(self.old_pos)
+        self.component.parentWidget().update()
+
 
 class CanvasWidget(QWidget):
     def __init__(self, parent=None):
@@ -24,6 +101,9 @@ class CanvasWidget(QWidget):
         self.setAcceptDrops(True)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
+
+        self.undo_stack = QUndoStack(self)
+
 
         # State
         self.components = []
@@ -52,7 +132,7 @@ class CanvasWidget(QWidget):
     def dropEvent(self, event):
         pos = event.pos()
         text = event.mimeData().text()
-        self.add_component_label(text, pos)
+        self.create_component_command(text, pos)
         event.acceptProposedAction()
 
     def deselect_all(self):
@@ -126,6 +206,23 @@ class CanvasWidget(QWidget):
                 event.accept()
                 return
 
+                self.setFocus()
+                self.update()
+                event.accept()
+                return
+
+        # Check if clicked on a component
+        child = self.childAt(event.pos())
+        if child:
+            # childAt might return a sub-widget of ComponentWidget, walk up
+            curr = child
+            while curr and not isinstance(curr, ComponentWidget) and curr != self:
+                curr = curr.parentWidget()
+            
+            if isinstance(curr, ComponentWidget):
+                self.drag_item = curr
+                self.drag_item_start_pos = curr.pos()
+
         # Clicked blank
         self.active_connection = None
         self.drag_connection = None
@@ -189,6 +286,13 @@ class CanvasWidget(QWidget):
     def mouseReleaseEvent(self, event):
         self.handle_connection_release(event.pos())
         self.drag_connection = None
+
+        if hasattr(self, 'drag_item') and self.drag_item:
+            if self.drag_item.pos() != self.drag_item_start_pos:
+                cmd = MoveCommand(self.drag_item, self.drag_item_start_pos, self.drag_item.pos())
+                self.undo_stack.push(cmd)
+            self.drag_item = None
+
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
@@ -201,17 +305,21 @@ class CanvasWidget(QWidget):
         to_del_comps = [c for c in self.components if c.is_selected]
         to_del_conns = [c for c in self.connections if c.is_selected]
 
+        # Identify connections that are attached to deleted components
+        # (These should also be deleted, but DeleteCommand needs to know about them explicitly to restore them)
+        attached_conns = []
         for i in range(len(self.connections) - 1, -1, -1):
             conn = self.connections[i]
             if (conn.start_component in to_del_comps or 
-                conn.end_component in to_del_comps or 
-                conn in to_del_conns):
-                self.connections.pop(i)
+                conn.end_component in to_del_comps):
+                if conn not in to_del_conns and conn not in attached_conns:
+                    attached_conns.append(conn)
 
-        for comp in to_del_comps:
-            if comp in self.components:
-                self.components.remove(comp)
-            comp.deleteLater()
+        all_conns_to_del = to_del_conns + attached_conns
+
+        if to_del_comps or all_conns_to_del:
+            cmd = DeleteCommand(self, to_del_comps, all_conns_to_del)
+            self.undo_stack.push(cmd)
         
         self.update()
 
@@ -239,7 +347,7 @@ class CanvasWidget(QWidget):
         painter.draw_active_connection(qp, self.active_connection)
 
     # ---------------------- COMPONENT CREATION ----------------------
-    def add_component_label(self, text, pos):
+    def create_component_command(self, text, pos):
         # Use separated logic
         svg = resources.find_svg_path(text, self.base_dir)
         config = resources.get_component_config_by_name(text, self.component_config) or {}
@@ -264,6 +372,10 @@ class CanvasWidget(QWidget):
             return
 
         comp = ComponentWidget(svg, self, config=config)
-        comp.move(pos)
-        comp.show()
-        self.components.append(comp)
+        # Don't show/append here, AddCommand will do it
+        # comp.move(pos) 
+        # comp.show()
+        # self.components.append(comp)
+        
+        cmd = AddCommand(self, comp, pos)
+        self.undo_stack.push(cmd)

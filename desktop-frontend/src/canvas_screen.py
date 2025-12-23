@@ -41,8 +41,11 @@ class CanvasScreen(QMainWindow):
     def _connect_menu_signals(self):
         self.menu_manager.new_project_clicked.connect(self.on_new_project)
         self.menu_manager.back_home_clicked.connect(self.on_back_home)
+        self.menu_manager.back_home_clicked.connect(self.on_back_home)
         self.menu_manager.delete_clicked.connect(self.on_delete_component)
         self.menu_manager.logout_clicked.connect(self.logout)
+        self.menu_manager.undo_clicked.connect(self.on_undo)
+        self.menu_manager.redo_clicked.connect(self.on_redo)
 
         # Placeholders
         self.menu_manager.open_project_clicked.connect(lambda: print("Open Project clicked"))
@@ -66,6 +69,16 @@ class CanvasScreen(QMainWindow):
         active_sub = self.mdi_area.currentSubWindow()
         if active_sub and isinstance(active_sub.widget(), CanvasWidget):
             active_sub.widget().delete_selected_components()
+
+    def on_undo(self):
+        active_sub = self.mdi_area.currentSubWindow()
+        if active_sub and isinstance(active_sub.widget(), CanvasWidget):
+            active_sub.widget().undo_stack.undo()
+
+    def on_redo(self):
+        active_sub = self.mdi_area.currentSubWindow()
+        if active_sub and isinstance(active_sub.widget(), CanvasWidget):
+            active_sub.widget().undo_stack.redo()
 
     def logout(self):
         app_state.access_token = None
