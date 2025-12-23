@@ -129,7 +129,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     });
 
     // Generate label: Legend + Count + Suffix
-    const label = `${legend}-${padCount(nextCount)}-${suffix}`;
+  const label = `${legend}-${padCount(nextCount)}${suffix ? `-${suffix}` : ''}`;
+
+
 
     const id = ++globalIdCounter;
     const seq = (editor.sequenceCounter ?? 0) + 1;
