@@ -1,12 +1,15 @@
 import os
 from PyQt5 import QtWidgets, QtGui
-from PyQt5.QtCore import Qt, QPoint, QPointF
-from PyQt5.QtWidgets import QWidget, QLabel
+from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF
+from PyQt5.QtWidgets import QWidget, QLabel, QUndoStack
 from PyQt5.QtGui import QPainter
 
 from src.component_widget import ComponentWidget
 import src.app_state as app_state
 from src.canvas import resources, painter
+from src.canvas.commands import AddCommand, DeleteCommand, MoveCommand
+
+
 
 class CanvasWidget(QWidget):
     def __init__(self, parent=None):
@@ -25,6 +28,8 @@ class CanvasWidget(QWidget):
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
 
+        self.undo_stack = QUndoStack(self)
+
         # State
         self.components = []
         self.connections = []
@@ -34,7 +39,7 @@ class CanvasWidget(QWidget):
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.component_config = resources.load_config(base_dir)
         self.label_data = resources.load_label_data(base_dir)
-        self.base_dir = base_dir # store for svg finding
+        self.base_dir = base_dir
 
     def update_canvas_theme(self):
         palette = self.palette()
@@ -52,17 +57,14 @@ class CanvasWidget(QWidget):
     def dropEvent(self, event):
         pos = event.pos()
         text = event.mimeData().text()
-        self.add_component_label(text, pos)
+        self.create_component_command(text, pos)
         event.acceptProposedAction()
 
     def deselect_all(self):
         for comp in self.components:
             comp.set_selected(False)
-        
-        # Deselect connections (check existence just in case)
         for conn in self.connections:
             conn.is_selected = False
-
         self.update()
 
     # ---------------------- SELECTION + CONNECTION LOGIC ----------------------
@@ -86,7 +88,6 @@ class CanvasWidget(QWidget):
                 self.drag_connection = hit_connection
                 self.drag_start_pos = event.pos()
 
-                # Determine best sensitivity param (simplified logic from original)
                 best_param = "path_offset"
                 best_sensitivity = QPointF(0, 0)
                 best_mag_sq = -1
@@ -94,7 +95,6 @@ class CanvasWidget(QWidget):
                 params = ["path_offset", "start_adjust", "end_adjust"]
                 base_points = list(hit_connection.path)
 
-                # Heuristic to find which parameter moves the segment under cursor
                 for p in params:
                     old = getattr(hit_connection, p)
                     setattr(hit_connection, p, old + 1.0)
@@ -126,11 +126,23 @@ class CanvasWidget(QWidget):
                 event.accept()
                 return
 
+        # Check if clicked on a component
+        child = self.childAt(event.pos())
+        if child:
+            curr = child
+            while curr and not isinstance(curr, ComponentWidget) and curr != self:
+                curr = curr.parentWidget()
+            
+            if isinstance(curr, ComponentWidget):
+                self.drag_item = curr
+                self.drag_item_start_pos = curr.pos()
+
         # Clicked blank
         self.active_connection = None
         self.drag_connection = None
         self.setFocus()
         event.accept()
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         if self.active_connection:
@@ -157,7 +169,6 @@ class CanvasWidget(QWidget):
 
         snap = False
         for comp in self.components:
-            # Simple bounds check
             if not comp.geometry().adjusted(-30, -30, 30, 30).contains(pos):
                 continue
             
@@ -189,6 +200,13 @@ class CanvasWidget(QWidget):
     def mouseReleaseEvent(self, event):
         self.handle_connection_release(event.pos())
         self.drag_connection = None
+
+        if hasattr(self, 'drag_item') and self.drag_item:
+            if self.drag_item.pos() != self.drag_item_start_pos:
+                cmd = MoveCommand(self.drag_item, self.drag_item_start_pos, self.drag_item.pos())
+                self.undo_stack.push(cmd)
+            self.drag_item = None
+
         super().mouseReleaseEvent(event)
 
     def keyPressEvent(self, event):
@@ -201,17 +219,19 @@ class CanvasWidget(QWidget):
         to_del_comps = [c for c in self.components if c.is_selected]
         to_del_conns = [c for c in self.connections if c.is_selected]
 
+        attached_conns = []
         for i in range(len(self.connections) - 1, -1, -1):
             conn = self.connections[i]
             if (conn.start_component in to_del_comps or 
-                conn.end_component in to_del_comps or 
-                conn in to_del_conns):
-                self.connections.pop(i)
+                conn.end_component in to_del_comps):
+                if conn not in to_del_conns and conn not in attached_conns:
+                    attached_conns.append(conn)
 
-        for comp in to_del_comps:
-            if comp in self.components:
-                self.components.remove(comp)
-            comp.deleteLater()
+        all_conns_to_del = to_del_conns + attached_conns
+
+        if to_del_comps or all_conns_to_del:
+            cmd = DeleteCommand(self, to_del_comps, all_conns_to_del)
+            self.undo_stack.push(cmd)
         
         self.update()
 
@@ -239,8 +259,7 @@ class CanvasWidget(QWidget):
         painter.draw_active_connection(qp, self.active_connection)
 
     # ---------------------- COMPONENT CREATION ----------------------
-    def add_component_label(self, text, pos):
-        # Use separated logic
+    def create_component_command(self, text, pos):
         svg = resources.find_svg_path(text, self.base_dir)
         config = resources.get_component_config_by_name(text, self.component_config) or {}
 
@@ -264,6 +283,14 @@ class CanvasWidget(QWidget):
             return
 
         comp = ComponentWidget(svg, self, config=config)
-        comp.move(pos)
-        comp.show()
-        self.components.append(comp)
+        cmd = AddCommand(self, comp, pos)
+        self.undo_stack.push(cmd)
+
+    # ---------------------- EXPORT ----------------------
+    def export_to_image(self, filename):
+        from src.canvas.export import export_to_image
+        export_to_image(self, filename)
+
+    def export_to_pdf(self, filename):
+        from src.canvas.export import export_to_pdf
+        export_to_pdf(self, filename)

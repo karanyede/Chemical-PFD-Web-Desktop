@@ -41,13 +41,16 @@ class CanvasScreen(QMainWindow):
     def _connect_menu_signals(self):
         self.menu_manager.new_project_clicked.connect(self.on_new_project)
         self.menu_manager.back_home_clicked.connect(self.on_back_home)
+        self.menu_manager.back_home_clicked.connect(self.on_back_home)
         self.menu_manager.delete_clicked.connect(self.on_delete_component)
         self.menu_manager.logout_clicked.connect(self.logout)
+        self.menu_manager.undo_clicked.connect(self.on_undo)
+        self.menu_manager.redo_clicked.connect(self.on_redo)
 
         # Placeholders
         self.menu_manager.open_project_clicked.connect(lambda: print("Open Project clicked"))
-        self.menu_manager.save_project_clicked.connect(lambda: print("Save Project clicked"))
-        self.menu_manager.generate_image_clicked.connect(lambda: print("Generate Image clicked"))
+        self.menu_manager.save_project_clicked.connect(self.on_save_project)
+        self.menu_manager.generate_image_clicked.connect(self.on_generate_image)
         self.menu_manager.generate_report_clicked.connect(lambda: print("Generate Report clicked"))
         self.menu_manager.add_symbols_clicked.connect(lambda: print("Add Symbols clicked"))
 
@@ -66,6 +69,59 @@ class CanvasScreen(QMainWindow):
         active_sub = self.mdi_area.currentSubWindow()
         if active_sub and isinstance(active_sub.widget(), CanvasWidget):
             active_sub.widget().delete_selected_components()
+
+    def on_undo(self):
+        active_sub = self.mdi_area.currentSubWindow()
+        if active_sub and isinstance(active_sub.widget(), CanvasWidget):
+            active_sub.widget().undo_stack.undo()
+
+    def on_redo(self):
+        active_sub = self.mdi_area.currentSubWindow()
+        if active_sub and isinstance(active_sub.widget(), CanvasWidget):
+            active_sub.widget().undo_stack.redo()
+
+    def on_save_project(self):
+        active_sub = self.mdi_area.currentSubWindow()
+        if not active_sub or not isinstance(active_sub.widget(), CanvasWidget):
+            return
+
+        canvas = active_sub.widget()
+        options = QtWidgets.QFileDialog.Options()
+        filename, filter_type = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save Project", "", 
+            "PDF Files (*.pdf);;JPEG Files (*.jpg);;PFD Files (*.pfd)", 
+            options=options
+        )
+
+        if not filename:
+            return
+
+        if filter_type.startswith("PDF"):
+            if not filename.lower().endswith(".pdf"):
+                filename += ".pdf"
+            canvas.export_to_pdf(filename)
+        elif filter_type.startswith("JPEG"):
+            if not filename.lower().endswith(".jpg"):
+                filename += ".jpg"
+            canvas.export_to_image(filename)
+        elif filter_type.startswith("PFD"):
+            print("PFD Save not implemented yet")
+
+    def on_generate_image(self):
+        active_sub = self.mdi_area.currentSubWindow()
+        if not active_sub or not isinstance(active_sub.widget(), CanvasWidget):
+            return
+            
+        canvas = active_sub.widget()
+        options = QtWidgets.QFileDialog.Options()
+        filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Generate Image", "", 
+            "JPEG Files (*.jpg);;PNG Files (*.png)", 
+            options=options
+        )
+        
+        if filename:
+            canvas.export_to_image(filename)
 
     def logout(self):
         app_state.access_token = None
