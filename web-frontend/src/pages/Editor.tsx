@@ -115,6 +115,7 @@ export default function Editor() {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
 
   const { exportDiagram, isExporting, exportError } = useExport();
   const handleExport = async (options: ExportOptions) => {
@@ -135,6 +136,11 @@ export default function Editor() {
   const handleZoomOut = () => {
     setStageScale((prev) => Math.max(0.1, prev - 0.1)); // Min 10%, decrement 10%
   };
+  
+  const handleToggleGrid = () => {
+  setShowGrid(prev => !prev);
+  };
+
   const handleCenterToContent = () => {
     if (droppedItems.length === 0) {
       // If no items, reset view
@@ -239,6 +245,13 @@ export default function Editor() {
       display: "Ctrl + Z",
       requireCtrl: true,
       handler: undo,
+    },
+    {
+      key: "g",
+      label: "Toggle Grid",
+      display: "Ctrl+G",
+      requireCtrl: true,
+      handler: handleToggleGrid,
     },
     {
       key: "y",
@@ -827,12 +840,15 @@ export default function Editor() {
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
-              backgroundImage: "radial-gradient(#9ca3af 1px, transparent 1px)",
+              backgroundImage: showGrid 
+                ? "radial-gradient(#9ca3af 1px, transparent 1px)"
+                : "none",
               backgroundSize: `${20 * stageScale}px ${20 * stageScale}px`,
               backgroundPosition: `${stagePos.x}px ${stagePos.y}px`,
-              opacity: 0.3,
+              opacity: 0.6,
             }}
           />
+
 
           <Stage
             ref={stageRef}
