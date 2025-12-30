@@ -1,6 +1,6 @@
 from importlib.resources import path
 from django.contrib import admin
-from .models import Project, Component, ProjectComponent
+from .models import Project, Component, CanvasState, Connection
 from django.contrib import admin
 from django.urls import path
 from django.shortcuts import render, redirect
@@ -108,12 +108,14 @@ class ComponentAdmin(admin.ModelAdmin):
                             # Check if component with this s_no already exists
                             existing_component = Component.objects.filter(s_no=s_no).first()
                             grips = row.get("grips")  # from CSV
-
                             if grips:
                                 try:
+                                    print("Grips data:", grips)
                                     grips = json.loads(grips)
                                 except json.JSONDecodeError:
+                                    print(f"Invalid JSON format for grips in component '{component_name}'. Setting grips to empty list.")
                                     grips = []
+
                             else:
                                 grips = []
                             
@@ -187,10 +189,10 @@ class ComponentAdmin(admin.ModelAdmin):
 # -----------------------------
 # ProjectComponent Admin
 # -----------------------------
-@admin.register(ProjectComponent)
-class ProjectComponentAdmin(admin.ModelAdmin):
-    list_display = ("id", "project_name", "component_name", "component_unique_id")
-    search_fields = ("component_unique_id", "project__name", "component__name")
+@admin.register(CanvasState)
+class CanvasStateAdmin(admin.ModelAdmin):
+    list_display = ("id", "project", "component", "label", "sequence")
+    search_fields = ("label", "project__name", "component__name")
     list_filter = ("project", "component")
 
     # Show project name
@@ -202,3 +204,7 @@ class ProjectComponentAdmin(admin.ModelAdmin):
     def component_name(self, obj):
         return obj.component.name
     component_name.short_description = "Component"
+
+@admin.register(Connection)
+class ConnectionAdmin(admin.ModelAdmin):
+    list_display = ("id", "sourceItemId", "targetItemId")

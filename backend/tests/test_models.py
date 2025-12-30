@@ -58,4 +58,4 @@ class ComponentModelTest(TestCase):
         self.assertEqual(component.legend, '')
         self.assertEqual(component.suffix, '')
         self.assertEqual(component.object, '')
-        self.assertEqual(component.grips, '')
+        self.assertEqual(component.grips,[])

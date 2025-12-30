@@ -11,7 +11,7 @@ Backend API for a **Chemical Process Flow Diagram (PFD)** system built with **Dj
 
 ## Table of Contents
 
-- [Chemical PFD Django Backend API](#chemical-pfd-django-backend-api)
+- [Django API Project](#django-api-project)
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
   - [Setup](#setup)
@@ -323,6 +323,7 @@ Authorization: Bearer <access_token>
 ```json
 {
   "name": "Project B",
+  "description" : "Test Project"
 }
 ```
 
@@ -330,11 +331,16 @@ Authorization: Bearer <access_token>
 
 ```json
 {
-  "message": "Project created",
-  "project": {
-    "id": 2,
-    "name": "Project B"
-  }
+    "message": "Project created",
+    "project": {
+        "id": 1,
+        "name": "demo project",
+        "description": "Project description",
+        "created_at": "2025-12-29T14:04:51.320947Z",
+        "updated_at": "2025-12-29T14:04:51.320987Z",
+        "thumbnail": null,
+        "user": 2
+    }
 }
 ```
 
@@ -349,91 +355,236 @@ Authorization: Bearer <access_token>
 
 ```json
 {
-  "status": "success",
-  "project": {
     "id": 1,
-    "name": "Project A",
-    "description": "Test project",
-    "components": [
-      {
-        "id": 1,
-        "component_id": 101,
-        "component_unique_id": "uuid123",
-        "connections": []
-      }
-    ]
-  }
+    "name": "Demo Project Updated",
+    "description": "This is an updated project description for testing.",
+    "created_at": "2025-12-29T14:04:51.320947Z",
+    "updated_at": "2025-12-29T14:48:49.595396Z",
+    "thumbnail": null,
+    "user": 2,
+    "status": "success",
+    "canvas_state": {
+        "items": [
+            {
+                "id": 1,
+                "project": 1,
+                "component_id": 101,
+                "label": "Pump #1",
+                "x": 100.0,
+                "y": 150.0,
+                "width": 50.0,
+                "height": 50.0,
+                "rotation": 0.0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "sequence": 1,
+                "s_no": "615",
+                "parent": "Instrumentation Symbol",
+                "name": "Gas Filter",
+                "svg": null,
+                "png": null,
+                "object": "GasFilter",
+                "legend": "",
+                "suffix": "",
+                "grips": []
+            },
+            {
+                "id": 2,
+                "project": 1,
+                "component_id": 102,
+                "label": "Valve #1",
+                "x": 300.0,
+                "y": 150.0,
+                "width": 50.0,
+                "height": 50.0,
+                "rotation": 0.0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "sequence": 2,
+                "s_no": "616",
+                "parent": "Instrumentation Symbol",
+                "name": "Interlock",
+                "svg": null,
+                "png": null,
+                "object": "Interlock",
+                "legend": "",
+                "suffix": "",
+                "grips": []
+            }
+        ],
+        "connections": [
+            {
+                "id": 1,
+                "sourceItemId": 1,
+                "sourceGripIndex": 0,
+                "targetItemId": 2,
+                "targetGripIndex": 1,
+                "waypoints": [
+                    {
+                        "x": 150,
+                        "y": 150
+                    },
+                    {
+                        "x": 250,
+                        "y": 150
+                    }
+                ]
+            }
+        ],
+        "sequence_counter": 3.0
+    }
 }
 ```
 
 **PUT Request Example (Update Components):**
 
 ```json
- {
+{
+  "id": 1,
+  "name": "Demo Project Updated",
+  "description": "This is an updated project description for testing.",
+  "created_at": "2025-12-29T14:04:51.320947Z",
+  "updated_at": "2025-12-29T14:45:21.523416Z",
+  "thumbnail": null,
+  "user": 2,
+  "status": "success",
+  "canvas_state": {
+    "items": [
+      {
+        "id": 1,
+        "component": {
+          "id": 101,
+          "name": "Pump"
+        },
+        "label": "Pump #1",
+        "x": 100,
+        "y": 150,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "sequence": 1,
+        "connections": []
+      },
+      {
         "id": 2,
-        "name": "demo project 2 update",
-        "created_at": "2025-12-12T04:19:48.043208Z",
-        "user": 2,
-        "components": [
-            {
-                "component_id" : "1342",
-                "component_unique_id": "com5",
-                "connections": [
-                    "com4",
-                    "com2"
-                ]
-            },
-             {
-                "component_id" : "1347",
-                "component_unique_id": "com5",
-                "connections": [
-                    "com4",
-                    "com2"
-                ]
-            }
+        "component": {
+          "id": 102,
+          "name": "Valve"
+        },
+        "label": "Valve #1",
+        "x": 300,
+        "y": 150,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "sequence": 2,
+        "connections": []
+      }
+    ],
+    "connections": [
+      {
+        "id": 1,
+        "sourceItemId": 1,
+        "sourceGripIndex": 0,
+        "targetItemId": 2,
+        "targetGripIndex": 1,
+        "waypoints": [
+          {"x": 150, "y": 150},
+          {"x": 250, "y": 150}
         ]
-    }
+      }
+    ],
+    "sequence_counter": 3
+  }
+}
+
 ```
 
 **PUT Response Example:**
 
 ```json
 {
+    "id": 1,
+    "name": "Demo Project Updated",
+    "description": "This is an updated project description for testing.",
+    "created_at": "2025-12-29T14:04:51.320947Z",
+    "updated_at": "2025-12-29T14:55:34.762297Z",
+    "thumbnail": null,
+    "user": 2,
     "status": "success",
-    "message": "Project updated successfully",
-    "project": {
-        "id": 2,
-        "name": "demo project 2 update",
-        "created_at": "2025-12-12T04:19:48.043208Z",
-        "user": 2,
-        "components": [
+    "canvas_state": {
+        "items": [
             {
-                "id": 1342,
-                "name": "Liquid Flow",
+                "id": 1,
+                "project": 1,
+                "component_id": 101,
+                "label": "Pump #1",
+                "x": 100.0,
+                "y": 150.0,
+                "width": 50.0,
+                "height": 50.0,
+                "rotation": 0.0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "sequence": 1,
+                "s_no": "615",
+                "parent": "Instrumentation Symbol",
+                "name": "Gas Filter",
                 "svg": null,
                 "png": null,
+                "object": "GasFilter",
                 "legend": "",
                 "suffix": "",
-                "component_unique_id": "com5",
-                "connections": [
-                    "com4",
-                    "com2"
-                ]
+                "grips": []
             },
             {
-                "id": 1347,
-                "name": "Connecting Line",
+                "id": 2,
+                "project": 1,
+                "component_id": 102,
+                "label": "Valve #1",
+                "x": 300.0,
+                "y": 150.0,
+                "width": 50.0,
+                "height": 50.0,
+                "rotation": 0.0,
+                "scaleX": 1.0,
+                "scaleY": 1.0,
+                "sequence": 2,
+                "s_no": "616",
+                "parent": "Instrumentation Symbol",
+                "name": "Interlock",
                 "svg": null,
                 "png": null,
+                "object": "Interlock",
                 "legend": "",
                 "suffix": "",
-                "component_unique_id": "com5",
-                "connections": [
-                    "com4",
-                    "com2"
+                "grips": []
+            }
+        ],
+        "connections": [
+            {
+                "id": 1,
+                "sourceItemId": 1,
+                "sourceGripIndex": 0,
+                "targetItemId": 2,
+                "targetGripIndex": 1,
+                "waypoints": [
+                    {
+                        "x": 150,
+                        "y": 150
+                    },
+                    {
+                        "x": 250,
+                        "y": 150
+                    }
                 ]
             }
-        ]
+        ],
+        "sequence_counter": 3.0
     }
 }
 ```

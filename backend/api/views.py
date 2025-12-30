@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import Http404
-from .models import Component, Project, ProjectComponent
-from .serializers import ComponentSerializer, ProjectSerializer, ProjectComponentSerializer
+from .models import Component, Project, CanvasState, Connection
+from .serializers import ComponentSerializer, ProjectSerializer,CanvasStateSerializer, ConnectionSerializer
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework.decorators import api_view, permission_classes
@@ -90,7 +90,6 @@ class ComponentByNameView(generics.RetrieveAPIView):
     serializer_class = ComponentSerializer
     permission_classes = [AllowAny]
     lookup_field = 'name'
-
 class ProjectListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ProjectSerializer
@@ -109,17 +108,17 @@ class ProjectListCreateView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        project = serializer.save(user=request.user)
+        # Don't pass user here
+        project = serializer.save()
         return Response({
             "message": "Project created",
             "project": self.get_serializer(project).data
         }, status=status.HTTP_201_CREATED)
 
 class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Project.objects.all()
     serializer_class = ProjectSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = 'id'
+    lookup_field = "id"
 
     def get_queryset(self):
         return Project.objects.filter(user=self.request.user)
@@ -130,72 +129,139 @@ class ProjectDetailView(generics.RetrieveUpdateDestroyAPIView):
                 "status": "error",
                 "message": "Project not found"
             }, status=status.HTTP_404_NOT_FOUND)
-
         return super().handle_exception(exc)
 
+    # -----------------------------
+    # RETRIEVE
+    # -----------------------------
     def retrieve(self, request, *args, **kwargs):
         project = self.get_object()
-        serializer = self.get_serializer(project)
 
-        project_components = ProjectComponent.objects.filter(
-            project=project
-        ).select_related("component")
+        # Project detail
+        project_data = ProjectSerializer(project).data
 
-        pc_serializer = ProjectComponentSerializer(project_components, many=True)
-        project_data = serializer.data
-        project_data["components"] = pc_serializer.data
+        # Canvas items (nodes)
+        canvas_items = (
+            CanvasState.objects
+            .filter(project=project)
+            .select_related("component")
+            .order_by("sequence")
+        )
 
-        return Response({
-            "status": "success",
-            "project": project_data
-        }, status=status.HTTP_200_OK)
+        items_data = CanvasStateSerializer(canvas_items, many=True).data
 
+        # Connections (edges)
+        connections = Connection.objects.filter(
+            sourceItemId__project=project
+        )
+
+        connections_data = ConnectionSerializer(connections, many=True).data
+
+        # Sequence counter (next available)
+        sequence_counter = (
+            canvas_items.last().sequence + 1
+            if canvas_items.exists()
+            else 0
+        )
+        response_data = project_data
+        response_data["status"] = "success"
+        response_data["canvas_state"] = {
+                "items": items_data,
+                "connections": connections_data,
+                "sequence_counter": sequence_counter
+            }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    # UPDATE (project only)
     def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False) 
+        partial = kwargs.pop("partial", False)
         project = self.get_object()
 
-        serializer = self.get_serializer(
-            project, data=request.data, partial=partial
-        )
+        # Update Project fields
+        project_data = {
+            "name": request.data.get("name", project.name),
+            "description": request.data.get("description", project.description),
+            "thumbnail": request.data.get("thumbnail", project.thumbnail)
+        }
+
+        serializer = self.get_serializer(project, data=project_data, partial=partial)
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
-        components = request.data.get("components", [])
-        for component_data in components:
-            component_id = component_data.get("component_id")
-            component_unique_id = component_data.get("component_unique_id")
-            connections = component_data.get("connections", {})
+        # Update CanvasState items
+        canvas_state = request.data.get("canvas_state", {})
+        items = canvas_state.get("items", [])
+        connections = canvas_state.get("connections", [])
 
-            if not component_id or not component_unique_id:
+        for item in items:
+            unique_id = item.get("id")
+            if not unique_id:
                 continue
 
-            project_component, created = ProjectComponent.objects.update_or_create(
-                project=project,
-                component_id=component_id,
+            CanvasState.objects.update_or_create(
+                id=unique_id,
                 defaults={
-                    "component_unique_id": component_unique_id,
-                    "connections": connections
+                    "project": project,
+                    "component_id": item.get("component", {}).get("id") if item.get("component") else None,
+                    "label": item.get("label"),
+                    "x": item.get("x"),
+                    "y": item.get("y"),
+                    "width": item.get("width"),
+                    "height": item.get("height"),
+                    "rotation": item.get("rotation", 0),
+                    "scaleX": item.get("scaleX", 1),
+                    "scaleY": item.get("scaleY", 1),
+                    "sequence": item.get("sequence", 0),
+                    "connections": item.get("connections", [])
                 }
             )
+
+        # Update Connections
+        for conn in connections:
+            conn_id = conn.get("id")
+            source_id = conn.get("sourceItemId")
+            target_id = conn.get("targetItemId")
+
+            if not source_id or not target_id:
+                continue
+
+            Connection.objects.update_or_create(
+                id=conn_id,
+                defaults={
+                    "sourceItemId_id": source_id,
+                    "sourceGripIndex": conn.get("sourceGripIndex", 0),
+                    "targetItemId_id": target_id,
+                    "targetGripIndex": conn.get("targetGripIndex", 0),
+                    "waypoints": conn.get("waypoints", [])
+                }
+            )
+
+        # Prepare response
         project.refresh_from_db()
+        canvas_items = CanvasState.objects.filter(project=project)
+        canvas_items_data = CanvasStateSerializer(canvas_items, many=True).data
+        connection_data = ConnectionSerializer(
+            Connection.objects.filter(sourceItemId__project=project),
+            many=True
+        ).data
 
-        project_components = ProjectComponent.objects.filter(
-            project=project
-        ).select_related("component")
+        response_data = ProjectSerializer(project).data
+        response_data["status"] = "success"
+        response_data["canvas_state"] = {
+            "items": canvas_items_data,
+            "connections": connection_data,
+            "sequence_counter": canvas_items.last().sequence + 1 if canvas_items.exists() else 0
+        } 
+        return Response(response_data, status=status.HTTP_200_OK)
 
-        pc_serializer = ProjectComponentSerializer(project_components, many=True)
-        project_data = serializer.data
-        project_data["components"] = pc_serializer.data
 
-        return Response({
-            "status": "success",
-            "message": "Project updated successfully",
-            "project": project_data
-        }, status=status.HTTP_200_OK)
-    
+
+    # DELETE
     def destroy(self, request, *args, **kwargs):
-        project = self.get_object()  # 404 if not owned by user
+        project = self.get_object()
         project.delete()
+
         return Response({
             "status": "success",
             "message": "Project deleted successfully"

@@ -2,8 +2,11 @@ from django.db import models
 
 class Project(models.Model):
     name = models.CharField(max_length=100)
+    description = models.CharField(max_length=2000, default=None, null=True, blank=True)
     user = models.ForeignKey('auth.User', on_delete=models.CASCADE, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField( auto_now=True)
+    thumbnail = models.ImageField(upload_to="thumbnails/", null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -22,8 +25,23 @@ class Component(models.Model):
     def __str__(self):
         return self.name
 
-class ProjectComponent(models.Model):
+class CanvasState(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE)
     component = models.ForeignKey(Component, on_delete=models.CASCADE)
-    component_unique_id = models.CharField(max_length=100)
+    label = models.CharField(max_length=100)
+    x = models.FloatField()
+    y = models.FloatField()
+    width = models.FloatField()
+    height = models.FloatField()
+    rotation = models.FloatField(default=0)
+    scaleX = models.FloatField(default=1)
+    scaleY = models.FloatField(default=1)
+    sequence = models.IntegerField()
     connections = models.JSONField(default=list)
+
+class Connection(models.Model):
+    sourceItemId = models.ForeignKey(CanvasState, on_delete=models.CASCADE, related_name="sources")
+    sourceGripIndex = models.IntegerField()
+    targetItemId = models.ForeignKey(CanvasState, on_delete=models.CASCADE, related_name="targets")
+    targetGripIndex = models.IntegerField()
+    waypoints = models.JSONField()
