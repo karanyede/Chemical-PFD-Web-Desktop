@@ -42,6 +42,13 @@ import {
   type Connection,
 } from "@/components/Canvas/types";
 import { ExportReportModal } from "@/components/Canvas/ExportReportModal";
+import {
+  createExportData,
+  exportToDiagramFile,
+  importFromDiagramFile,
+  validateExportData,
+  migrateExportData,
+} from "@/utils/diagramExport";
 
 type Shortcut = {
   key: string;
@@ -58,7 +65,8 @@ export default function Editor() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [gridSize] = useState(20);
-
+// In your state section, add:
+  const [isImporting, setIsImporting] = useState(false);
   // Get editor store methods
   const editorStore = useEditorStore();
 
@@ -102,23 +110,49 @@ export default function Editor() {
 
 // In your Editor.tsx handleExport function:
 const handleExport = async (options: ExportOptions) => {
+  if (!projectId || !currentState) {
+    alert('No project loaded');
+    return;
+  }
+
   setIsExporting(true);
   
-  // Save current grid state
+  // Save current grid state for image exports
   const originalShowGrid = showGrid;
   
   try {
+    if (options.format === 'export') {
+      // Custom diagram file export
+      const exportData = createExportData(
+        currentState,
+        {
+          scale: stageScale,
+          position: stagePos,
+          gridSize: gridSize,
+          showGrid: showGrid,
+          snapToGrid: snapToGrid,
+        },
+        projectId,
+        `Diagram ${projectId}`
+      );
+      
+      exportToDiagramFile(exportData, `diagram-${projectId}.export`);
+      setShowExportModal(false);
+      return;
+    }
+    
+    // Original image export code
     if (!stageRef.current) {
       throw new Error('Stage not available');
     }
 
-    // Temporarily update grid visibility based on export options
-    if (options.showGrid !== undefined) {
-      setShowGrid(options.showGrid);
-      
-      // Force a re-render to update the canvas
-      await new Promise(resolve => setTimeout(resolve, 50));
+    // Temporarily update grid visibility for image exports
+    if (options.includeGrid !== undefined) {
+      setShowGrid(options.includeGrid);
     }
+    
+    // Force a re-render to update the canvas
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     // Use the updated exportDiagram function with connections
     const result = await exportDiagram(
@@ -126,28 +160,25 @@ const handleExport = async (options: ExportOptions) => {
       droppedItems,
       {
         ...options,
-        connections: connections, // Pass connections here
+        connections: connections,
       }
     );
 
-    // Generate filename
     const timestamp = new Date().toISOString().split('T')[0];
     const filename = `diagram-${timestamp}.${options.format}`;
     
-    // Download based on format
-    if (options.format === 'svg') {
-      downloadSVG(result as string, filename);
-    } else {
-      downloadBlob(result as Blob, filename);
-    }
+     downloadBlob(result as Blob, filename);
+    
     
     setShowExportModal(false);
   } catch (error) {
     console.error('Export failed:', error);
     alert(`Export failed: ${(error as Error).message}`);
   } finally {
-    // Restore original grid state
-    setShowGrid(originalShowGrid);
+    // Always restore original grid state for image exports
+    if (options.format !== 'export') {
+      setShowGrid(originalShowGrid);
+    }
     setIsExporting(false);
   }
 };
