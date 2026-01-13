@@ -47,7 +47,15 @@ def render_to_image(canvas, rect, scale=1.0):
         painter.translate(-rect.topLeft())
         
         # Draw Connections
+        painter.save()
+        # Scale connections to match the visual coordinate system of components
+        if hasattr(canvas, 'zoom_level'):
+            # When exporting efficiently (Zoom 1.0), this is just 1.0
+            # If we didn't reset zoom, we'd need to match visual scale
+            z = canvas.zoom_level
+            painter.scale(z, z)
         canvas_painter.draw_connections(painter, canvas.connections, canvas.components)
+        painter.restore()
         
         # Draw Components (Manually to handle custom render logic if needed)
         for comp in canvas.components:
@@ -112,52 +120,79 @@ def draw_equipment_table(painter, canvas, page_rect, start_y):
 # ---------------------- EXPORT FUNCTIONS ----------------------
 def export_to_image(canvas, filename):
     """Export canvas to high-quality image with proper rendering"""
-    # Use higher resolution for better quality
-    scale_factor = 3.0
+    # STRATEGY: 
+    # 1. Save current zoom
+    # 2. Reset zoom to 1.0 (This forces all components to render at logic size = visual size)
+    # 3. Export with Scale 3.0 (High Res)
+    # 4. Restore zoom
     
-    rect = get_content_rect(canvas)
-    image = render_to_image(canvas, rect, scale=scale_factor)
+    old_z = getattr(canvas, 'zoom_level', 1.0)
     
-    # Save with maximum quality
-    image.save(filename, quality=100)
+    # 1. & 2. Reset Zoom
+    if old_z != 1.0:
+        canvas.zoom_level = 1.0
+        canvas.apply_zoom()
+        
+    try:
+        # 3. Export
+        scale_factor = 3.0
+        rect = get_content_rect(canvas)
+        image = render_to_image(canvas, rect, scale=scale_factor)
+        image.save(filename, quality=100)
+    finally:
+        # 4. Restore Zoom
+        if old_z != 1.0:
+            canvas.zoom_level = old_z
+            canvas.apply_zoom()
 
 def export_to_pdf(canvas, filename):
     """Export canvas to high-quality PDF"""
-    rect = get_content_rect(canvas)
     
-    # Use high resolution for PDF
-    scale_factor = 4.0
-    image = render_to_image(canvas, rect, scale=scale_factor)
-    
-    # PDF Setup with HighResolution mode
-    printer = QPrinter(QPrinter.HighResolution)
-    printer.setOutputFormat(QPrinter.PdfFormat)
-    printer.setOutputFileName(filename)
-    
-    # Calculate size in millimeters for proper scaling
-    mm_per_inch = 25.4
-    # Use printer's resolution for accurate conversion
-    dpi = printer.resolution()
-    
-    s = rect.size()
-    w_mm = (s.width() / dpi) * mm_per_inch
-    h_mm = (s.height() / dpi) * mm_per_inch
-    
-    printer.setPageSize(QPageSize(QSizeF(w_mm, h_mm), QPageSize.Millimeter))
-    printer.setPageMargins(0, 0, 0, 0, QPrinter.Millimeter)
-    
-    painter = QPainter(printer)
-    try:
-        # Enable high-quality rendering
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
-        painter.setRenderHint(QPainter.HighQualityAntialiasing)
+    # STRATEGY: Reset Zoom to 1.0
+    old_z = getattr(canvas, 'zoom_level', 1.0)
+    if old_z != 1.0:
+        canvas.zoom_level = 1.0
+        canvas.apply_zoom()
         
-        # Draw the high-res image to fill the page
-        target_rect = painter.viewport()
-        painter.drawImage(target_rect, image)
+    try:
+        rect = get_content_rect(canvas)
+        scale_factor = 4.0
+        image = render_to_image(canvas, rect, scale=scale_factor)
+        
+        # PDF Setup with HighResolution mode
+        printer = QPrinter(QPrinter.HighResolution)
+        printer.setOutputFormat(QPrinter.PdfFormat)
+        printer.setOutputFileName(filename)
+        
+        # Calculate size in millimeters for proper scaling
+        mm_per_inch = 25.4
+        # Use printer's resolution for accurate conversion
+        dpi = printer.resolution()
+        
+        s = rect.size()
+        w_mm = (s.width() / dpi) * mm_per_inch
+        h_mm = (s.height() / dpi) * mm_per_inch
+        
+        printer.setPageSize(QPageSize(QSizeF(w_mm, h_mm), QPageSize.Millimeter))
+        printer.setPageMargins(0, 0, 0, 0, QPrinter.Millimeter)
+        
+        painter = QPainter(printer)
+        try:
+            # Enable high-quality rendering
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
+            painter.setRenderHint(QPainter.HighQualityAntialiasing)
+            
+            # Draw the high-res image to fill the page
+            target_rect = painter.viewport()
+            painter.drawImage(target_rect, image)
+        finally:
+            painter.end()
     finally:
-        painter.end()
+        # Restore Zoom
+        if old_z != 1.0:
+            canvas.zoom_level = old_z
+            canvas.apply_zoom()
 
 def generate_report_pdf(canvas, filename):
     """Generate multi-page PDF report with diagram and equipment list"""
@@ -170,9 +205,20 @@ def generate_report_pdf(canvas, filename):
     painter = QPainter(printer)
     try:
         # Page 1: Diagram
-        rect = get_content_rect(canvas)
-        # Use higher scale for crisp rendering
-        image = render_to_image(canvas, rect, scale=4.0)
+        
+        # Reset Zoom for consistency
+        old_z = getattr(canvas, 'zoom_level', 1.0)
+        if old_z != 1.0:
+            canvas.zoom_level = 1.0
+            canvas.apply_zoom()
+            
+        try:
+            rect = get_content_rect(canvas)
+            image = render_to_image(canvas, rect, scale=4.0)
+        finally:
+            if old_z != 1.0:
+                canvas.zoom_level = old_z
+                canvas.apply_zoom()
         
         page_rect = printer.pageRect(QPrinter.DevicePixel).toRect()
         

@@ -68,6 +68,7 @@ class ImageSubWindow(QMdiSubWindow):
         
         self.scale_factor = 1.0
         self.original_pixmap = None
+        self.first_show = True
         
         # Scroll Area
         self.scroll_area = QtWidgets.QScrollArea()
@@ -109,6 +110,32 @@ class ImageSubWindow(QMdiSubWindow):
         if self.scale_factor < 0.1: self.scale_factor = 0.1
         self.update_image_size()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.first_show:
+            self.first_show = False
+            # Delay to ensure viewport size is correct
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(50, self.fit_to_window)
+
+    def fit_to_window(self):
+        if not self.original_pixmap: return
+        viewport = self.scroll_area.viewport()
+        view_size = viewport.size()
+        
+        if view_size.width() <= 0 or view_size.height() <= 0: return
+        
+        img_size = self.original_pixmap.size()
+        if img_size.width() <= 0 or img_size.height() <= 0: return
+        
+        # Calculate fit ratio
+        ratio_w = view_size.width() / img_size.width()
+        ratio_h = view_size.height() / img_size.height()
+        
+        # Use slightly less than full fit to ensure margins
+        self.scale_factor = min(ratio_w, ratio_h) * 0.95
+        self.update_image_size()
+
     def update_image_size(self):
         if self.original_pixmap and not self.original_pixmap.isNull():
             new_size = self.original_pixmap.size() * self.scale_factor
@@ -127,8 +154,9 @@ class PDFSubWindow(QMdiSubWindow):
         self.pdf_path = pdf_path
         self.setAttribute(Qt.WA_DeleteOnClose)
         
-        self.zoom_level = 1.5  # Initial zoom
+        self.zoom_level = 1.0  # Initial zoom placeholder
         self.doc = None
+        self.first_show = True
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -198,13 +226,38 @@ class PDFSubWindow(QMdiSubWindow):
             super().wheelEvent(event)
 
     def zoom_in(self):
-        self.zoom_level += 0.25
-        if self.zoom_level > 5.0: self.zoom_level = 5.0
+        self.zoom_level *= 1.2
+        if self.zoom_level > 20.0: self.zoom_level = 20.0
         self.render_pages()
 
     def zoom_out(self):
-        self.zoom_level -= 0.25
-        if self.zoom_level < 0.5: self.zoom_level = 0.5
+        self.zoom_level /= 1.2
+        if self.zoom_level < 0.1: self.zoom_level = 0.1
+        self.render_pages()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.first_show:
+            self.first_show = False
+            from PyQt5.QtCore import QTimer
+            QTimer.singleShot(50, self.fit_to_window)
+
+    def fit_to_window(self):
+        if not self.doc: return
+        
+        viewport = self.scroll_area.viewport()
+        view_size = viewport.size()
+        
+        if view_size.width() <= 0: return
+        
+        # Get first page size
+        page = self.doc.load_page(0)
+        rect = page.rect
+        
+        ratio_w = view_size.width() / rect.width
+        ratio_h = view_size.height() / rect.height
+        
+        self.zoom_level = min(ratio_w, ratio_h) * 0.95
         self.render_pages()
 
 class CanvasSubWindow(QMdiSubWindow):
