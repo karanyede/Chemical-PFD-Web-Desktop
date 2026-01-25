@@ -12,7 +12,252 @@ from src.canvas import painter as canvas_painter
 from src.canvas import resources
 from src.component_widget import ComponentWidget
 from src.connection import Connection
+import src.app_state as app_state
+from src.api_client import update_project, get_components
 
+# ---------------------- CANVAS STATE SERIALIZATION ----------------------
+# ✅ Module-level cache
+_component_cache = None
+_cache_timestamp = None
+
+def get_component_id_map():
+    """Get s_no → id mapping with caching (5 min TTL)"""
+    global _component_cache, _cache_timestamp
+    
+    import time
+    now = time.time()
+    
+    # Cache for 5 minutes
+    if _component_cache and _cache_timestamp and (now - _cache_timestamp < 300):
+        return _component_cache
+    
+    backend_components = get_components()
+    _component_cache = {str(c.get('s_no', '')): c.get('id') 
+                        for c in backend_components if c.get('s_no')}
+    _cache_timestamp = now
+    
+    return _component_cache
+
+def serialize_canvas_state(canvas):
+    """
+    Convert canvas components and connections to backend-compatible format.
+    Returns dict matching the canvas_state structure from API docs.
+    """
+    # Use cached mapping
+    sno_to_id = get_component_id_map()
+
+    items = []
+    comp_map = {}  # Maps component object to its ID
+    
+    missing_snos = set()
+    
+    for i, comp in enumerate(canvas.components):
+        c_dict = comp.to_dict()
+        s_no = str(comp.config.get("s_no", ""))
+        
+        # Get component ID from backend using s_no
+        component_backend_id = sno_to_id.get(s_no)
+        
+        if not component_backend_id:
+            if s_no not in missing_snos:
+                print(f"[EXPORT ERROR] Component '{comp.config.get('name')}' (s_no: {s_no}) not found in DB. Skipping.")
+                missing_snos.add(s_no)
+            continue
+        
+        # KEY CHANGE: Start ID from 1 instead of 0
+        # The backend rejects '0' because it evaluates to False/Empty.
+        safe_id = i + 1
+        
+        item = {
+            "id": safe_id,    # Sends 1, 2, 3... (Backend accepts this)
+            "component": {
+                "id": component_backend_id
+            },
+            "label": comp.config.get("default_label", ""),
+            "x": float(c_dict["x"]),
+            "y": float(c_dict["y"]),
+            "width": float(c_dict["width"]),
+            "height": float(c_dict["height"]),
+            "rotation": float(c_dict["rotation"]),
+            "scaleX": 1.0,
+            "scaleY": 1.0,
+            "sequence": safe_id # Keep sequence matching ID for clarity
+        }
+        items.append(item)
+        comp_map[comp] = safe_id  # Store the 1-based ID for connection mapping
+    
+    connections = []
+    for i, conn in enumerate(canvas.connections):
+        # Resolve component using the safe_id (1-based)
+        start_id = comp_map.get(conn.start_component, -1)
+        end_id = comp_map.get(conn.end_component, -1)
+        
+        # Skip connections if the components attached were skipped
+        if start_id == -1 or end_id == -1:
+            continue
+        
+        connection_data = {
+            "id": i + 1, # Good practice to make connection IDs 1-based too
+            "sourceItemId": start_id,
+            "sourceGripIndex": conn.start_grip_index,
+            "targetItemId": end_id,
+            "targetGripIndex": conn.end_grip_index,
+            "waypoints": [
+                {"x": float(p.x()), "y": float(p.y())}
+                for p in conn.path
+            ]
+        }
+        connections.append(connection_data)
+    
+    return {
+        "items": items,
+        "connections": connections,
+        "sequence_counter": len(items)
+    }
+
+def save_canvas_state(canvas):
+    """
+    Save canvas state to backend via UPDATE API.
+    This is called every time the canvas is modified.
+    """
+    if not canvas.project_id:
+        print("[EXPORT ERROR] No project ID. Cannot save.")
+        return None
+    
+    canvas_state = serialize_canvas_state(canvas)
+    
+    # Debug output
+    print(f"[EXPORT] Saving {len(canvas_state['items'])} items and {len(canvas_state['connections'])} connections")
+    if canvas_state['items']:
+        print(f"[EXPORT] First item: {canvas_state['items'][0]}")
+    
+    result = update_project(
+        project_id=canvas.project_id,
+        canvas_state=canvas_state
+    )
+    
+    if result:
+        print(f"[EXPORT] Canvas saved successfully to project {canvas.project_id}")
+    else:
+        print(f"[EXPORT ERROR] Failed to save canvas state")
+    
+    return result
+
+def load_canvas_from_project(canvas, project_data):
+    """
+    Load canvas from backend project data.
+    Expects project_data to have 'canvas_state' with items and connections.
+    """
+    try:
+        # Block auto-save during load
+        canvas._is_loading = True
+        canvas_state = project_data.get("canvas_state")
+        if not canvas_state:
+            print("[LOAD] No canvas_state in project data")
+            return True # Empty project is valid
+        
+        items_data = canvas_state.get("items", [])
+        conns_data = canvas_state.get("connections", [])
+        
+        print(f"[LOAD] Loading {len(items_data)} items and {len(conns_data)} connections")
+
+        # Clear existing canvas
+        canvas.components = []
+        canvas.connections = []
+        for c in canvas.children():
+            if isinstance(c, (ComponentWidget, QLabel)):
+                c.deleteLater()
+        
+        # Load Components
+        id_map = {}
+        
+        for d in items_data:
+            # Get component data from nested structure
+            component_data = d.get("component", {})
+            
+            # Try to find SVG path
+            s_no = d.get("s_no") or component_data.get("s_no", "")
+            name = d.get("name") or component_data.get("name", "")
+            svg_path = d.get("svg") or component_data.get("svg")
+            
+            if not svg_path and name:
+                # Try to find SVG by name
+                svg_path = resources.find_svg_path(name, canvas.base_dir)
+            
+            if not svg_path:
+                print(f"[LOAD] No SVG path for component: {name}")
+                continue
+            
+            # Resolve path if needed
+            if not os.path.exists(svg_path):
+                found = resources.find_svg_path(name or os.path.basename(svg_path), canvas.base_dir)
+                if found:
+                    svg_path = found
+                else:
+                    print(f"[LOAD] SVG not found for {name}")
+                    continue
+            
+            # Build config from item data
+            config = {
+                "s_no": s_no,
+                "parent": d.get("parent") or component_data.get("parent", ""),
+                "name": name,
+                "object": d.get("object") or component_data.get("object", ""),
+                "legend": d.get("legend") or component_data.get("legend", ""),
+                "suffix": d.get("suffix") or component_data.get("suffix", ""),
+                "default_label": d.get("label", "")
+            }
+            
+            comp = ComponentWidget(svg_path, canvas, config=config)
+            
+            # Set position and size from backend data
+            x = float(d.get("x", 0))
+            y = float(d.get("y", 0))
+            w = float(d.get("width", 100))
+            h = float(d.get("height", 100))
+            
+            comp.logical_rect = QRectF(x, y, w, h)
+            comp.rotation_angle = float(d.get("rotation", 0))
+            
+            # Apply visuals
+            comp.update_visuals(canvas.zoom_level)
+            comp.show()
+            
+            canvas.components.append(comp)
+            id_map[d.get("id")] = comp
+        
+        # Load Connections
+        for d in conns_data:
+            sid = d.get("sourceItemId")
+            eid = d.get("targetItemId")
+            
+            start_comp = id_map.get(sid)
+            end_comp = id_map.get(eid)
+            
+            if start_comp:
+                sg = d.get("sourceGripIndex", 0)
+                eg = d.get("targetGripIndex", 0)
+                
+                conn = Connection(start_comp, sg, "right")
+                if end_comp:
+                    conn.set_end_grip(end_comp, eg, "left")
+                
+                conn.update_path(canvas.components, canvas.connections)
+                canvas.connections.append(conn)
+        
+        canvas.update()
+        return True
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[LOAD ERROR] Failed to load project: {e}")
+        return False
+    
+    finally:
+        # Re-enable auto-save
+        canvas._is_loading = False
+    
 # ---------------------- HELPERS ----------------------
 def get_content_rect(canvas, padding=50):
     """Calculates the bounding rectangle of all canvas content."""
@@ -49,16 +294,13 @@ def render_to_image(canvas, rect, scale=1.0):
         
         # Draw Connections
         painter.save()
-        # Scale connections to match the visual coordinate system of components
         if hasattr(canvas, 'zoom_level'):
-            # When exporting efficiently (Zoom 1.0), this is just 1.0
-            # If we didn't reset zoom, we'd need to match visual scale
             z = canvas.zoom_level
             painter.scale(z, z)
         canvas_painter.draw_connections(painter, canvas.connections, canvas.components)
         painter.restore()
         
-        # Draw Components (Manually to handle custom render logic if needed)
+        # Draw Components
         for comp in canvas.components:
             painter.save()
             painter.translate(comp.pos())
@@ -70,7 +312,6 @@ def render_to_image(canvas, rect, scale=1.0):
 
 def draw_equipment_table(painter, canvas, page_rect, start_y):
     """Draws the equipment table on the painter."""
-    # Config
     row_height = 35
     w = page_rect.width()
     col_widths = [w * 0.15, w * 0.25, w * 0.60]
@@ -78,7 +319,7 @@ def draw_equipment_table(painter, canvas, page_rect, start_y):
     
     # Headers
     y = start_y
-    painter.setFont(QPainter().font()) # Reset
+    painter.setFont(QPainter().font())
     f = painter.font()
     f.setPointSize(10); f.setBold(True); painter.setFont(f)
     
@@ -285,21 +526,15 @@ def export_to_excel(canvas, filename):
 
 # ---------------------- PFD SERIALIZATION ----------------------
 def save_to_pfd(canvas, filename):
-    """
-    Saves the project in a format compatible with the Web Frontend.
-    Structure matches DiagramExportData from web-frontend types.ts.
-    """
+    """Saves project in legacy .pfd format"""
     import datetime
     
-    # 1. Map Items (Components)
     items = []
     comp_map = {c: i for i, c in enumerate(canvas.components)}
     
     for i, c in enumerate(canvas.components):
-        # Base dict from component
         c_dict = c.to_dict()
         
-        # Map to Web 'CanvasItem' structure
         item = {
             "id": i,
             "x": c_dict["x"],
@@ -307,20 +542,18 @@ def save_to_pfd(canvas, filename):
             "width": c_dict["width"],
             "height": c_dict["height"],
             "rotation": c_dict["rotation"],
-            "svg": c_dict["svg_path"], # Web expects 'svg' (string content or path)
-            # Web uses 'object' as key sometimes, or name
+            "svg": c_dict["svg_path"],
             "name": c_dict["config"].get("name", ""),
             "object": c_dict["config"].get("object", ""),
             "s_no": c_dict["config"].get("s_no", ""),
             "legend": c_dict["config"].get("legend", ""),
             "suffix": c_dict["config"].get("suffix", ""),
             "label": c_dict["config"].get("default_label", ""),
-            "config": c_dict["config"], # Keep full config for Desktop fidelity
+            "config": c_dict["config"],
             "grips": c.get_grips()
         }
         items.append(item)
 
-    # 2. Map Connections
     connections = []
     for i, c in enumerate(canvas.connections):
         start_id = comp_map.get(c.start_component, -1)
@@ -330,12 +563,8 @@ def save_to_pfd(canvas, filename):
             "id": i,
             "sourceItemId": start_id,
             "sourceGripIndex": c.start_grip_index,
-            # Web uses 'sourceGripIndex', Desktop uses 'start_grip' internally via to_dict,
-            # but here we serialize to Web format.
             "targetItemId": end_id,
             "targetGripIndex": c.end_grip_index,
-            
-            # Additional Desktop Properties (Preserved for full fidelity)
             "start_side": c.start_side,
             "end_side": c.end_side,
             "path_offset": c.path_offset,
@@ -344,7 +573,6 @@ def save_to_pfd(canvas, filename):
         }
         connections.append(conn)
 
-    # 3. Construct Final JSON
     data = {
         "version": "1.0.0",
         "displayedAt": datetime.datetime.now().isoformat(),
@@ -356,7 +584,7 @@ def save_to_pfd(canvas, filename):
         },
         "viewport": {
             "scale": getattr(canvas, "zoom_level", 1.0),
-            "position": {"x": 0, "y": 0} # Desktop doesn't track pan in same way yet
+            "position": {"x": 0, "y": 0}
         },
         "project": {
             "id": "desktop-export",
@@ -369,26 +597,19 @@ def save_to_pfd(canvas, filename):
         json.dump(data, f, indent=4)
 
 def load_from_pfd(canvas, filename):
+    """Load from legacy .pfd format"""
     if not os.path.exists(filename): return False
     try:
         with open(filename, 'r') as f: data = json.load(f)
         
         canvas.components = []
         canvas.connections = []
-        # Clear UI
         for c in canvas.children():
             if isinstance(c, (ComponentWidget, QLabel)): c.deleteLater()
             
-        # DETECT FORMAT
-        # 1. New Web/Desktop Format (has 'canvasState')
         if "canvasState" in data:
             items_data = data["canvasState"].get("items", [])
             conns_data = data["canvasState"].get("connections", [])
-            viewport = data.get("viewport", {})
-            # Optional: Restore zoom?
-            # if "scale" in viewport: canvas.zoom_level = viewport["scale"]
-            
-        # 2. Legacy Desktop Format (root 'components')
         elif "components" in data:
             items_data = data.get("components", [])
             conns_data = data.get("connections", [])
@@ -396,31 +617,23 @@ def load_from_pfd(canvas, filename):
             print("Unknown file format")
             return False
 
-        # Load Components
-        id_map = {} # Maps serialized ID -> ComponentWidget
+        id_map = {}
         
         for d in items_data:
-            # Handle key differences between formats
-            # Desktop: svg_path, Web: svg
             svg_path = d.get("svg_path") or d.get("svg")
             if not svg_path: continue
             
-            # Resolve Path
             if not os.path.exists(svg_path):
-                # Try finding it in assets using name/object or basename
                 name = d.get("name") or d.get("object") or os.path.basename(svg_path)
                 found = resources.find_svg_path(name, canvas.base_dir)
                 if found:
                     svg_path = found
                 else:
                     print(f"Warning: SVG not found for {name} ({svg_path})")
-                    continue # Skip invisible component? Or create placeholder?
+                    continue
             
-            # Desktop: config dict, Web: flat fields (mostly)
-            # We rebuild config
             config = d.get("config", {})
             if not config:
-                # Rebuild config from flat fields if missing (Web import)
                 config = {
                     "name": d.get("name", ""),
                     "object": d.get("object", ""),
@@ -432,7 +645,6 @@ def load_from_pfd(canvas, filename):
             
             comp = ComponentWidget(svg_path, canvas, config=config)
             
-            # CRITICAL FIX: Update LOGICAL rect, not just visual
             x = d.get("x", 0)
             y = d.get("y", 0)
             w = d.get("width", 100)
@@ -441,23 +653,15 @@ def load_from_pfd(canvas, filename):
             comp.logical_rect = QRectF(x, y, w, h)
             comp.rotation_angle = d.get("rotation", 0)
             
-            # Apply Visuals immediately
             comp.update_visuals(canvas.zoom_level)
-            
             comp.show()
             canvas.components.append(comp)
             
-            # Store ID for connection mapping
-            # Web uses 'id', Desktop uses 'id' in new serialization
             comp_id = d.get("id")
             if comp_id is not None:
                 id_map[comp_id] = comp
             
-        # Load Connections
         for d in conns_data:
-            # Web keys: sourceItemId/targetItemId
-            # Legacy keys: start_id/end_id
-            
             sid = d.get("sourceItemId") if "sourceItemId" in d else d.get("start_id")
             eid = d.get("targetItemId") if "targetItemId" in d else d.get("end_id")
             
@@ -465,11 +669,9 @@ def load_from_pfd(canvas, filename):
             e = id_map.get(eid)
             
             if s:
-                # Web: sourceGripIndex, Legacy: start_grip
                 sg = d.get("sourceGripIndex") if "sourceGripIndex" in d else d.get("start_grip")
                 eg = d.get("targetGripIndex") if "targetGripIndex" in d else d.get("end_grip")
                 
-                # Sides
                 ss = d.get("start_side", "right")
                 es = d.get("end_side", "left")
 
